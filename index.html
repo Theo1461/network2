@@ -1782,12 +1782,12 @@ const MOUSE_DOWN_HANDLER = handleMouseDown;
 const MOUSE_MOVE_HANDLER = handleMouseMove;
 const MOUSE_UP_HANDLER = handleMouseUp;
 
-if (touchTarget) {
     /**
      * Processes a touch event and calls the corresponding mouse handler function.
      * @param {TouchEvent} e - The raw touch event.
      * @param {function} handlerFunction - The plotting function to call.
      */
+  
     function processTouch(e, handlerFunction) {
         // Only handle single-finger touch for simple plotting
         if (e.touches.length > 1 && e.type !== 'touchend' && e.type !== 'touchcancel') return; 
@@ -1819,7 +1819,7 @@ if (touchTarget) {
     touchTarget.addEventListener('touchmove', (e) => processTouch(e, MOUSE_MOVE_HANDLER), { passive: false });
     touchTarget.addEventListener('touchend', (e) => processTouch(e, MOUSE_UP_HANDLER), { passive: false });
     touchTarget.addEventListener('touchcancel', (e) => processTouch(e, MOUSE_UP_HANDLER), { passive: false });
-}
+processTouch()
 function toggleMapMode() {
   if (routeManager.isCreating) {
     console.warn("Cannot change mode while creating a route.");
