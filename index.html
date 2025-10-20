@@ -1769,7 +1769,57 @@ function randomColor() {
   const colors = ["#FF5050","#00B3B3","#FFB347","#A650FF","#46C646", "#00A0A0", "#B36B00"];
   return colors[Math.floor(Math.random()*colors.length)];
 }
+/**
+ * Direct Touch-to-Function Layer
+ * This script calls the underlying mouse-handling functions directly
+ * with a simplified event object derived from touch coordinates.
+ */
+const touchTarget = document.querySelector('metroCanvas'); 
 
+// IMPORTANT: Replace 'handleMouseDown', 'handleMouseMove', and 'handleMouseUp'
+// with the actual function names used in your plotting code.
+const MOUSE_DOWN_HANDLER = handleMouseDown; 
+const MOUSE_MOVE_HANDLER = handleMouseMove;
+const MOUSE_UP_HANDLER = handleMouseUp;
+
+if (touchTarget) {
+    /**
+     * Processes a touch event and calls the corresponding mouse handler function.
+     * @param {TouchEvent} e - The raw touch event.
+     * @param {function} handlerFunction - The plotting function to call.
+     */
+    function processTouch(e, handlerFunction) {
+        // Only handle single-finger touch for simple plotting
+        if (e.touches.length > 1 && e.type !== 'touchend' && e.type !== 'touchcancel') return; 
+
+        e.preventDefault(); // Stop native browser scrolling/zooming
+
+        // Get the relevant touch point (first touch or changed touch for end/cancel)
+        const touch = e.touches[0] || e.changedTouches[0];
+        if (!touch) return;
+
+        // Create a minimal mock event object with the necessary touch variables
+        const simulatedEvent = {
+            // These coordinates are what your plotting logic needs
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            target: touchTarget,
+            // Include common mouse properties to simulate a left-click
+            button: 0, 
+            buttons: 1, 
+            preventDefault: () => e.preventDefault(),
+        };
+
+        // Directly call the plotting function, passing the mock event
+        handlerFunction(simulatedEvent);
+    }
+
+    // Map touch events to your handler functions
+    touchTarget.addEventListener('touchstart', (e) => processTouch(e, MOUSE_DOWN_HANDLER), { passive: false });
+    touchTarget.addEventListener('touchmove', (e) => processTouch(e, MOUSE_MOVE_HANDLER), { passive: false });
+    touchTarget.addEventListener('touchend', (e) => processTouch(e, MOUSE_UP_HANDLER), { passive: false });
+    touchTarget.addEventListener('touchcancel', (e) => processTouch(e, MOUSE_UP_HANDLER), { passive: false });
+}
 function toggleMapMode() {
   if (routeManager.isCreating) {
     console.warn("Cannot change mode while creating a route.");
