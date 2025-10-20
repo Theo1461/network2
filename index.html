@@ -1769,57 +1769,79 @@ function randomColor() {
   const colors = ["#FF5050","#00B3B3","#FFB347","#A650FF","#46C646", "#00A0A0", "#B36B00"];
   return colors[Math.floor(Math.random()*colors.length)];
 }
-/**
- * Direct Touch-to-Function Layer
- * This script calls the underlying mouse-handling functions directly
- * with a simplified event object derived from touch coordinates.
- */
-const touchTarget = document.querySelector('metroCanvas'); 
+// --- Touch Controls for Mobile Devices ---
 
-// IMPORTANT: Replace 'handleMouseDown', 'handleMouseMove', and 'handleMouseUp'
-// with the actual function names used in your plotting code.
-const MOUSE_DOWN_HANDLER = handleMouseDown; 
-const MOUSE_MOVE_HANDLER = handleMouseMove;
-const MOUSE_UP_HANDLER = handleMouseUp;
+// Function to convert touch event to a simulated mouse event object
+function getTouchPos(event) {
+    const touch = event.touches[0] || event.changedTouches[0];
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        // Mimic a left-click button for onMove/onClick
+        button: 0 
+    };
+}
 
-    /**
-     * Processes a touch event and calls the corresponding mouse handler function.
-     * @param {TouchEvent} e - The raw touch event.
-     * @param {function} handlerFunction - The plotting function to call.
-     */
-  
-    function processTouch(e, handlerFunction) {
-        // Only handle single-finger touch for simple plotting
-        if (e.touches.length > 1 && e.type !== 'touchend' && e.type !== 'touchcancel') return; 
+// Touch Down (Mimics Mouse Down for movement/selection)
+canvas.addEventListener('touchstart', (event) => {
+    // Prevent default browser behavior (e.g., scrolling/zooming)
+    event.preventDefault(); 
+    const pos = getTouchPos(event);
+    
+    // Simulate a mouse down event to initiate drag/selection
+    onMouseDown(pos);
+    
+    // Use onMove for initial touch position too, to ensure correct selection
+    onMove(pos); 
+}, { passive: false }); // Use passive: false to allow preventDefault
 
-        e.preventDefault(); // Stop native browser scrolling/zooming
-
-        // Get the relevant touch point (first touch or changed touch for end/cancel)
-        const touch = e.touches[0] || e.changedTouches[0];
-        if (!touch) return;
-
-        // Create a minimal mock event object with the necessary touch variables
-        const simulatedEvent = {
-            // These coordinates are what your plotting logic needs
-            clientX: touch.clientX,
-            clientY: touch.clientY,
-            target: touchTarget,
-            // Include common mouse properties to simulate a left-click
-            button: 0, 
-            buttons: 1, 
-            preventDefault: () => e.preventDefault(),
-        };
-
-        // Directly call the plotting function, passing the mock event
-        handlerFunction(simulatedEvent);
+// Touch Move (Mimics Mouse Move for dragging/hover effects)
+canvas.addEventListener('touchmove', (event) => {
+    event.preventDefault(); 
+    const pos = getTouchPos(event);
+    
+    // If a drag/move is active, call onMove
+    if (isDragging || mapMode === 'SELECT') {
+        onMove(pos);
     }
+}, { passive: false });
 
-    // Map touch events to your handler functions
-    touchTarget.addEventListener('touchstart', (e) => processTouch(e, MOUSE_DOWN_HANDLER), { passive: false });
-    touchTarget.addEventListener('touchmove', (e) => processTouch(e, MOUSE_MOVE_HANDLER), { passive: false });
-    touchTarget.addEventListener('touchend', (e) => processTouch(e, MOUSE_UP_HANDLER), { passive: false });
-    touchTarget.addEventListener('touchcancel', (e) => processTouch(e, MOUSE_UP_HANDLER), { passive: false });
-processTouch()
+// Touch End (Mimics Mouse Up for completing a click or drag)
+canvas.addEventListener('touchend', (event) => {
+    // Since we're preventing default on start/move, we need to manually 
+    // check if this was a "tap" (a click) or a "drag end" (a move).
+    
+    // Call onMove (which includes onMouseUp logic) to finalize selection or drag
+    // Note: getTouchPos uses touches[0], but touchend uses changedTouches[0]
+    const pos = getTouchPos(event); 
+    onMove(pos); 
+    
+    // Check for a tap (click): if it was not a drag, fire the click event
+    if (!isDragging) {
+        // The onClick logic is usually handled by onMove/onMouseUp in this pattern, 
+        // but if you have dedicated onClick logic, you might call it here:
+        onClick(pos); // <-- FIX: Call onClick for tap actions (road points, bus stops)
+    }
+    
+    // Reset drag state
+    isDragging = false; 
+    
+    // Clear any active selection state
+    if (selectedBusStop) {
+        selectedBusStop.selected = false;
+        selectedBusStop = null;
+        updateSelectedBusStopInfo();
+    }
+    
+    if (selectedBus) {
+        selectedBus = null;
+        updateSelectedBusInfo();
+    }
+});
+
 function toggleMapMode() {
   if (routeManager.isCreating) {
     console.warn("Cannot change mode while creating a route.");
