@@ -1769,50 +1769,7 @@ function randomColor() {
   const colors = ["#FF5050","#00B3B3","#FFB347","#A650FF","#46C646", "#00A0A0", "#B36B00"];
   return colors[Math.floor(Math.random()*colors.length)];
 }
-/**
- * Touch-to-Mouse Emulation Layer
- * This section captures single-finger touch events and dispatches
- * corresponding mouse events (mousedown, mousemove, mouseup) to the canvas,
- * allowing the existing mouse-based plotting logic to work on touch devices.
- */
-const touchTarget = document.querySelector('canvas'); // Finds the main canvas element
 
-if (touchTarget) {
-    // Utility function to create and dispatch a mouse event from a touch event
-    function emulateMouseEvent(e, type) {
-        // Only handle single-finger touch
-        if (e.touches.length > 1) return; 
-
-        e.preventDefault(); // Stop native browser scrolling/zooming
-
-        // Get the relevant touch point
-        const touch = e.touches[0] || e.changedTouches[0];
-        if (!touch) return;
-
-        // Create a new MouseEvent object
-        const simulatedEvent = new MouseEvent(type, {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-            clientX: touch.clientX,
-            clientY: touch.clientY,
-            // Register as a left-click (button 0)
-            button: 0, 
-            buttons: (type === 'mousedown') ? 1 : 0
-        });
-
-        // Dispatch the emulated mouse event on the canvas
-        touchTarget.dispatchEvent(simulatedEvent);
-    }
-
-    // Map touch events to mouse events
-    touchTarget.addEventListener('touchstart', (e) => emulateMouseEvent(e, 'mousedown'), { passive: false });
-    touchTarget.addEventListener('touchmove', (e) => emulateMouseEvent(e, 'mousemove'), { passive: false });
-    touchTarget.addEventListener('touchend', (e) => emulateMouseEvent(e, 'mouseup'), { passive: false });
-    
-    // In case of interruption (e.g., system alert), stop any ongoing drag
-    touchTarget.addEventListener('touchcancel', (e) => emulateMouseEvent(e, 'mouseup'), { passive: false });
-}
 function toggleMapMode() {
   if (routeManager.isCreating) {
     console.warn("Cannot change mode while creating a route.");
