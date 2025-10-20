@@ -1,0 +1,2069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Network2</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { 
+    margin: 0; 
+    background: #1f2937; 
+    /* Allow scrolling if content overflows, but main canvas is fixed */
+    overflow-y: auto; 
+    font-family: 'Inter', sans-serif; 
+    color: white; /* Default text color set here */
+  }
+
+  /* Focus styling for accessibility */
+  *:focus-visible {
+    outline: 4px solid #3b82f6; /* Blue-500 ring */
+    outline-offset: 2px;
+    border-radius: 8px; /* Apply to rounded elements */
+  }
+
+  /* Container for the background canvas, taking up most space */
+  #canvas-container { 
+    position: fixed; /* Fixed to keep controls relative to viewport */
+    top: 0; 
+    left: 0; 
+    width: 100vw; 
+    height: 100vh; 
+    z-index: 0; 
+  }
+  canvas { 
+    display: block; 
+    background: #f0f0f0; 
+    cursor: crosshair; 
+    width: 100%; 
+    height: 100%; 
+  }
+  
+  /* Shared styling for all floating control panels */
+  .control-panel {
+    position: absolute;
+    z-index: 100; /* Above the canvas */
+    padding: 16px;
+    border-radius: 12px;
+    background-color: rgba(31, 41, 55, 0.95); /* Gray-800 with transparency */
+    box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
+    /* Ensuring panel content has good contrast */
+    color: #f3f4f6; /* Gray-100 */
+    max-height: 95vh; /* Max height for panels */
+  }
+
+  /* Specific panel placements */
+  #main-controls { 
+    top: 10px; 
+    left: 10px; 
+    width: 380px; /* Slightly wider for better spacing */
+    max-width: 90vw;
+  }
+
+  /* Right Sidebar layout for supplementary panels */
+  #sidebar-panels {
+    position: absolute;
+    top: 10px;
+    right: -160px;
+    width: 570px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px; /* Space between panels */
+  }
+
+  .control-button {
+    padding: 10px 16px; /* Increased vertical padding for better tap/click target */
+    border-radius: 8px;
+    font-weight: 700; /* Bold text for buttons */
+    transition: all 0.2s;
+    cursor: pointer;
+    border: none; /* Removed default button border */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Styling for bus model items */
+  .bus-model-item {
+    border: 1px solid #374151; /* Gray-700 border for separation */
+    transition: background-color 0.2s;
+  }
+  .bus-model-item:hover {
+    background-color: #374151; /* Slightly darker on hover */
+  }
+
+  .terminal-label {
+    position: absolute;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.7); /* Darker background for contrast */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+    transform: translate(-50%, -150%);
+  }
+  .route-info-box {
+    border-left: 4px solid;
+    padding-left: 12px;
+    margin-top: 8px;
+    /* Added role for better screen reader context */
+  }
+
+  /* Scrollbar styling for better visibility on dark background */
+  .custom-scroll::-webkit-scrollbar { width: 8px; }
+  .custom-scroll::-webkit-scrollbar-track { background: #374151; /* Gray-700 */ }
+  .custom-scroll::-webkit-scrollbar-thumb { background: #6b7280; /* Gray-500 */ border-radius: 4px; }
+  .custom-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; /* Gray-400 */ }
+</style>
+</head>
+<body>
+
+<div id="canvas-container">
+    <canvas id="metroCanvas"></canvas>
+</div>
+
+<div id="main-controls" class="control-panel" role="region" aria-label="Simulation Controls">
+    <h1 class="sr-only">Bus Network Simulator and Manager</h1> <div class="flex justify-between items-center mb-4 pb-3 border-b border-gray-700">
+        <div id="time-display" class="text-green-400 text-4xl font-extrabold font-mono" aria-live="polite">09:00:00</div>
+        <button 
+            onclick="togglePause()" 
+            class="control-button bg-gray-600 hover:bg-gray-700 text-white text-base py-2 px-4"
+            aria-label="Pause or Resume Simulation"
+        >
+            <span id="pause-text">Pause</span>
+        </button>
+    </div>
+    
+    <div class="mb-4 text-2xl font-bold text-yellow-400" role="status" aria-live="polite">
+        Money: $<span id="money-display">1,000,000</span>
+    </div>
+
+    <fieldset class="mb-5 p-3 rounded-lg bg-gray-700/50 border border-gray-600">
+        <legend class="text-lg font-semibold text-gray-200 mb-2 px-2">Simulation Settings</legend>
+
+        <div class="mb-4">
+            <label for="speed-slider" class="block text-sm font-medium text-gray-400 mb-2">
+                Game Speed: <span id="speed-label" aria-live="polite">60x (1x)</span>
+            </label>
+            <input 
+                type="range" 
+                id="speed-slider" 
+                min="60" 
+                max="600" 
+                value="60" 
+                step="60"
+                oninput="setGameSpeed(this.value)"
+                class="w-full h-3 bg-gray-600 rounded-lg appearance-none cursor-pointer range-lg"
+                aria-valuemin="60"
+                aria-valuemax="600"
+                aria-valuenow="60"
+                aria-orientation="horizontal"
+                aria-label="Adjust simulation speed"
+            >
+        </div>
+    </fieldset>
+
+    <fieldset class="p-3 rounded-lg bg-gray-700/50 border border-gray-600">
+        <legend class="text-lg font-semibold text-gray-200 mb-3 px-2">Map & Route Actions</legend>
+
+        <div class="flex flex-wrap gap-3 mb-4">
+            <button 
+                id="generate-btn" 
+                onclick="resetAndGenerateRandomNetwork()" 
+                class="control-button bg-green-600 hover:bg-green-700 text-white flex-1"
+                aria-label="Reset and generate a new random map network"
+            >
+                Generate Random Map
+            </button>
+            <button 
+                id="mode-btn" 
+                onclick="toggleMapMode()" 
+                class="control-button bg-blue-500 hover:bg-blue-600 text-white flex-1"
+                aria-live="polite"
+            >
+                Mode: <span id="mode-text">Draw Lines</span>
+            </button>
+        </div>
+
+        <div id="route-controls" class="p-3 rounded-lg flex flex-col gap-2 border border-purple-500/50">
+            <button 
+                id="start-route-btn" 
+                onclick="startRouteCreation()" 
+                class="control-button bg-purple-600 hover:bg-purple-700 text-white"
+                aria-label="Start creation of a new bus route"
+            >
+                Start New Route
+            </button>
+        </div>
+    </fieldset>
+
+</div>
+
+<div id="sidebar-panels" class="scale-[0.7] origin-top-left text-[0%]">
+    <!-- Defined Routes Panel -->
+    <div id="route-list-panel" class="control-panel relative w-full" role="region" aria-label="Defined Routes List">
+        <h2 class="text-lg font-bold mb-2 flex justify-between items-center">
+            Defined Routes 
+            <span class="text-gray-400 font-normal">
+                (<span id="route-count" aria-live="polite">0</span>)
+            </span>
+        </h2>
+        <div id="routes-content" class="text-xs space-y-1 max-h-18 overflow-y-auto pr-2 custom-scroll" role="list">
+            <p class="text-gray-400 text-xs" id="no-routes-message">No routes defined yet. Start one using the main controls.</p>
+        </div>
+    </div>
+
+    <!-- Bus Depot Panel -->
+    <div id="bus-depot-panel" class="control-panel relative w-full max-h-108 mt-3" role="region" aria-label="Bus Depot for Purchasing Buses">
+        <h2 class="text-lg font-bold mb-2">Bus Depot</h2>
+        <div class="space-y-2" role="list">
+            <div role="listitem" class="p-2 bg-gray-700 rounded-lg flex justify-between items-center bus-model-item">
+                <div>
+                    <div class="font-bold text-base">NFI XN40 ($450,000)</div>
+                    <div class="text-xs text-gray-400">40ft Standard Bus, Cap: 60</div>
+                </div>
+                <button 
+                    onclick="buyBus('XN40')" 
+                    class="control-button bg-emerald-500 hover:bg-emerald-600 text-white text-sm py-1.5 px-3"
+                    aria-label="Buy NFI XN40 bus for $450,000"
+                >
+                    Buy
+                </button>
+            </div>
+            <div role="listitem" class="p-2 bg-gray-700 rounded-lg flex justify-between items-center bus-model-item">
+                <div>
+                    <div class="font-bold text-base">NFI XN60 ($700,000)</div>
+                    <div class="text-xs text-gray-400">60ft Articulated Bus, Cap: 100</div>
+                </div>
+                <button 
+                    onclick="buyBus('XN60')" 
+                    class="control-button bg-emerald-500 hover:bg-emerald-600 text-white text-sm py-1.5 px-3"
+                    aria-label="Buy NFI XN60 bus for $700,000"
+                >
+                    Buy
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Fleet Panel -->
+    <div id="bus-list-panel" class="control-panel relative w-full mt-3" role="region" aria-label="Active Bus Fleet List">
+        <h2 class="text-lg font-bold mb-2 flex justify-between items-center">
+            Active Fleet 
+            <span class="text-gray-400 font-normal">
+                (<span id="bus-count" aria-live="polite">0</span>)
+            </span>
+        </h2>
+        <div id="buses-content" class="text-xs space-y-1 max-h-24 overflow-y-auto pr-2 custom-scroll" role="list">
+            <p class="text-gray-400 text-xs" id="no-buses-message">No buses purchased yet. Visit the Bus Depot to buy one!</p> 
+        </div>
+    </div>
+
+    <!-- Retired Fleet Panel -->
+    <div id="retired-list-panel" class="control-panel relative w-full mt-3" role="region" aria-label="Retired Bus Roster">
+        <h2 class="text-lg font-bold mb-2 flex justify-between items-center">
+            Retired Roster
+            <span class="text-gray-400 font-normal">
+                (<span id="retired-count" aria-live="polite">0</span>)
+            </span>
+        </h2>
+        <div id="retired-content" class="text-xs space-y-1 max-h-24 overflow-y-auto pr-2 custom-scroll" role="list">
+            <p class="text-gray-400 text-xs" id="no-retired-message">No buses have been retired yet.</p> 
+        </div>
+    </div>
+</div>
+
+<script>
+// --- Global State ---
+const canvas = document.getElementById("metroCanvas");
+const ctx = canvas.getContext("2d");
+
+let stations = [];
+let lines = [];
+let nodes = [];
+let busStops = [];
+let routes = [];
+
+// ADDED: nextDepartureTime to track bus schedule
+// MODIFIED: Bus object now includes `pendingUnassign: false`
+let buses = [];        // { id, type, routeId, position: { lineId, t }, state: 'IDLE'|'IN_SERVICE'|'WAITING_FOR_SCHEDULE'|'REPAIRING'|'BREAK', pathIndex, path, nextDepartureTime, maintenance, currentBreakTime, pendingUnassign }
+let nextBusId = 101;
+let gameMoney = 1500000; 
+// MODIFIED: Bus object now includes `isTempUnRetired: false`
+// NEW: Retired Bus Roster
+let retiredBuses = []; // { id, type, model, maintenance, retiredOn: 'HH:MM' }
+
+// NEW: Retirement/Un-Retirement Constants
+const TEMP_UNRETIRE_COST_MONTHLY = 15000;
+const AUTO_SALE_PRICE_CRITICAL = 5000;
+const MAINTENANCE_SALE_FACTOR = 300; // Multiplier for (Maintenance Value) * 300 to reach $30,000 max bonus
+// MODIFIED: Bus Models and Costs
+const BUS_MODELS = {
+    // START MODIFICATION
+    GILLIG_CNG: { name: 'Gillig CNG 40ft', cost: 150000, capacity: 55, speed: 1.6, length: 15, color: '#059669', maxMaintenance: 130 }, 
+    GILLIG_HEV: { name: 'Gillig HEV Hybrid 40ft', cost: 350000, capacity: 50, speed: 1.55, length: 15, color: '#5C40CC', maxMaintenance: 120 }, 
+    XN40: { name: 'NFI XN40 (40ft)', cost: 275000, capacity: 60, speed: 1.9, length: 15, color: '#3b82f6', maxMaintenance: 100 }, 
+    XN60: { name: 'NFI XN60 (60ft Articulated)', cost: 450000, capacity: 100, speed: 1.2, length: 30, color: '#f97316', maxMaintenance: 110 } 
+    // END MODIFICATION
+};
+
+let activeLine = null;
+let hoverStation = null;
+let hoverBusStop = null;
+const gridSize = 40;
+const roadWidth = 20;
+
+let currentMode = 'LINE_DRAW'; 
+
+// Route Manager State
+let routeManager = {
+    isCreating: false,
+    tempRoute: null, // { name, color, stops: [{ stopId, type, path }], selectedLineId, terminalAId, terminalZId, schedule }
+};
+
+// Time Simulation
+let simTime = {
+    h: 9, m: 0, s: 0, ms: 0, 
+    speed: 600, // Base speed is 60 (1x)
+    isPaused: false
+};
+let lastTime = 0;
+let gameLoopInterval = null;
+
+let lastMonthlyCostCheckMins = getCurrentGameTimeMinutes();
+
+// Maintenance Constants
+const GENERAL_REPAIR_COST = 7500;
+const FULL_REPAIR_COST = 50000;
+const REPAIR_TIME_MINS = 45; // Game minutes
+const BREAK_TIME_MINS = 30; // Game minutes
+const MAINTENANCE_DECAY_PER_LAP = 15; // Amount maintenance drops per route loop (A->Z->A)
+
+// --- Initialization & Setup ---
+resize(); 
+initTime();
+updateMoneyDisplay();
+updateRouteList();
+// MODIFIED: Initial bus depot display
+updateBusDepotPanel();
+updateBusList(); 
+// Initialize speed label
+document.getElementById('speed-label').textContent = `300x (5x)`;
+
+
+window.addEventListener("resize", resize);
+canvas.addEventListener("click", onClick);
+canvas.addEventListener("mousemove", onMove);
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+// Adjust revenue simulation interval to use simTime.speed
+let revenueInterval = setInterval(simulatePassengerRevenue, 5000 / simTime.speed); 
+
+function setGameSpeed(value) {
+    const newSpeed = parseInt(value);
+    if (newSpeed >= 60 && newSpeed <= 1200) {
+        simTime.speed = newSpeed;
+        const multiplier = newSpeed / 60;
+        document.getElementById('speed-label').textContent = `${newSpeed}x (${multiplier}x)`;
+        
+        // Adjust passenger generation interval to match new speed
+        clearInterval(revenueInterval);
+        revenueInterval = setInterval(simulatePassengerRevenue, 5000 / simTime.speed); 
+    }
+}
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  draw();
+}
+
+function initTime() {
+    lastTime = performance.now();
+    if (!gameLoopInterval) {
+        gameLoopInterval = requestAnimationFrame(gameLoop);
+    }
+}
+
+function gameLoop(timestamp) {
+    if (!simTime.isPaused) {
+        const deltaTimeMs = timestamp - lastTime;
+        updateTime(deltaTimeMs);
+        // MODIFIED: Removed updateBuses call here. It's now called within updateTime for better sync.
+        updateBuses(deltaTimeMs);
+    }
+    lastTime = timestamp;
+    requestAnimationFrame(gameLoop);
+}
+
+function togglePause() {
+    simTime.isPaused = !simTime.isPaused;
+    document.getElementById('pause-text').textContent = simTime.isPaused ? 'Resume' : 'Pause';
+    console.log(`Simulation ${simTime.isPaused ? 'paused' : 'resumed'}`);
+}
+function triggerAction() {
+
+      const gameDeltaMs = 1
+    simTime.m += gameDeltaMs;
+}
+
+// Run once every 10 seconds
+setInterval(triggerAction, 200); // 10000 ms = 10 seconds
+function updateTime(deltaTimeMs) {
+    // The base time unit is 1 real second = 1 game minute (simTime.speed = 60).
+    // The speed multiplier scales this up.
+
+
+    // MODIFIED: Use `if` instead of `while` to ensure only one "tick" happens per frame for smooth simulation flow
+    // A single frame can now advance time by more than 1s, which is fine for high speed
+    if (simTime.ms >= 1000) { simTime.s++; simTime.ms -= 1000; }
+    if (simTime.s >= 60) { simTime.m++; simTime.s -= 60; }
+    if (simTime.m >= 60) { simTime.h++; simTime.m -= 60; }
+    if (simTime.h >= 24) { simTime.h -= 24; }
+    
+    document.getElementById('time-display').textContent = formatTime(simTime);
+    const nowMinutes = getCurrentGameTimeMinutes();
+    // Use a threshold, e.g., 24 hours (1440 minutes) for a monthly check
+    if (nowMinutes - lastMonthlyCostCheckMins >= 1440) { 
+        handleMonthlyCosts();
+        // Reset the check time, rolling over days
+        lastMonthlyCostCheckMins = nowMinutes; 
+    }
+    // updateBuses(deltaTimeMs); // Moved to gameLoop for stability at very high speeds
+    draw();
+}
+
+function formatTime(time) {
+    const h = String(time.h).padStart(2, '0');
+    const m = String(time.m).padStart(2, '0');
+    const s = String(time.s).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+}
+
+// Helper to convert minutes (0 to 1439) into "HH:MM" format
+function minutesToTime(totalMinutes) {
+    // Ensure we account for days wrapping
+    const dayMinutes = totalMinutes % (24 * 60);
+    const h = String(Math.floor(dayMinutes / 60)).padStart(2, '0');
+    const m = String(dayMinutes % 60).padStart(2, '0');
+    return `${h}:${m}`;
+}
+
+// Helper to get current game time in minutes
+function getCurrentGameTimeMinutes() {
+    return (simTime.h % 24) * 60 + simTime.m;
+}
+
+// --- Money & UI Updates ---
+
+function updateMoneyDisplay() {
+    document.getElementById('money-display').textContent = gameMoney.toLocaleString('en-US');
+}
+
+// NEW: Update Bus Depot Panel to include Gillig CNG and HEV, and NFI XN40
+function updateBusDepotPanel() {
+    const panel = document.getElementById('bus-depot-panel');
+    panel.innerHTML = `
+        <h2 class="text-xl font-bold mb-3">腸 Bus Depot</h2>
+        <div class="space-y-4">
+            <div class="p-3 bg-gray-700 rounded-lg flex justify-between items-center">
+                <div>
+                    <div class="font-bold text-lg">Gillig CNG 40ft ($${BUS_MODELS.GILLIG_CNG.cost.toLocaleString('en-US')})</div>
+                    <div class="text-sm text-gray-400">40ft Standard Bus, Cap: ${BUS_MODELS.GILLIG_CNG.capacity}</div>
+                </div>
+                <button onclick="buyBus('GILLIG_CNG')" class="control-button bg-emerald-500 hover:bg-emerald-600 text-white text-sm py-2 px-4">
+                    Buy
+                </button>
+            </div>
+            <div class="p-3 bg-gray-700 rounded-lg flex justify-between items-center">
+                <div>
+                    <div class="font-bold text-lg">Gillig HEV Hybrid 40ft ($${BUS_MODELS.GILLIG_HEV.cost.toLocaleString('en-US')})</div>
+                    <div class="text-sm text-gray-400">40ft Hybrid Bus, Cap: ${BUS_MODELS.GILLIG_HEV.capacity}</div>
+                </div>
+                <button onclick="buyBus('GILLIG_HEV')" class="control-button bg-emerald-500 hover:bg-emerald-600 text-white text-sm py-2 px-4">
+                    Buy
+                </button>
+            </div>
+            <div class="p-3 bg-gray-700 rounded-lg flex justify-between items-center">
+                <div>
+                    <div class="font-bold text-lg">NFI XN40 ($${BUS_MODELS.XN40.cost.toLocaleString('en-US')})</div>
+                    <div class="text-sm text-gray-400">40ft Standard Bus, Cap: ${BUS_MODELS.XN40.capacity}</div>
+                </div>
+                <button onclick="buyBus('XN40')" class="control-button bg-emerald-500 hover:bg-emerald-600 text-white text-sm py-2 px-4">
+                    Buy
+                </button>
+            </div>
+            <div class="p-3 bg-gray-700 rounded-lg flex justify-between items-center">
+                <div>
+                    <div class="font-bold text-lg">NFI XN60 ($${BUS_MODELS.XN60.cost.toLocaleString('en-US')})</div>
+                    <div class="text-sm text-gray-400">60ft Articulated Bus, Cap: ${BUS_MODELS.XN60.capacity}</div>
+                </div>
+                <button onclick="buyBus('XN60')" class="control-button bg-emerald-500 hover:bg-emerald-600 text-white text-sm py-2 px-4">
+                    Buy
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function updateRouteList() {
+    const contentDiv = document.getElementById('routes-content');
+    const countSpan = document.getElementById('route-count');
+    
+    // FIX: Add null check for the element before accessing 'style'
+    const noRoutesMessage = document.getElementById('no-routes-message');
+    if (noRoutesMessage) {
+        noRoutesMessage.style.display = routes.length === 0 ? 'block' : 'none';
+    }
+    
+    countSpan.textContent = routes.length;
+    contentDiv.innerHTML = routes.map(route => {
+        // Calculate bus count for the route
+        const activeBuses = buses.filter(b => b.routeId === route.id && (b.state === 'IN_SERVICE' || b.state === 'WAITING_FOR_SCHEDULE'));
+
+        return `
+            <div class="p-2 rounded-lg bg-gray-700 hover:bg-gray-600" style="border-left: 4px solid ${route.color};">
+                <div class="font-bold flex justify-between items-center">
+                    ${route.name}
+                    <span class="text-xs text-gray-400">${activeBuses.length} / ${route.stops.length} stops</span>
+                </div>
+                <div class="text-xs text-gray-500">
+                    ${String(route.schedule.startH).padStart(2, '0')}:00 - ${String(route.schedule.endH).padStart(2, '0')}:00 | Freq: ${route.schedule.freqMins}m
+                </div>
+                <button onclick="assignBusToRoute('${route.id}')" class="text-xs mt-1 text-blue-400 hover:text-blue-300">
+                    Assign Bus
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateBusList() {
+    const contentDiv = document.getElementById('buses-content');
+    const countSpan = document.getElementById('bus-count');
+    const noBusesMessage = document.getElementById('no-buses-message');
+    if (noBusesMessage) {
+        noBusesMessage.style.display = buses.length === 0 ? 'block' : 'none';
+    }
+
+    countSpan.textContent = buses.length;
+    buses.sort((a,b) => a.id - b.id);
+    contentDiv.innerHTML = buses.map(bus => {
+        const route = routes.find(r => r.id === bus.routeId);
+        const routeName = route?.name || 'Unassigned';
+        const busModel = BUS_MODELS[bus.type];
+        
+        let statusText = bus.state;
+        let stateColor = 'bg-gray-600'; // Default for IDLE
+
+        // MODIFIED: Check for pending unassign first
+        if (bus.pendingUnassign) {
+            statusText = `Unassign Pending!`;
+            stateColor = 'bg-pink-600';
+        } else if (bus.state === 'WAITING_FOR_SCHEDULE' && bus.nextDepartureTime !== undefined) {
+            // Display next departure time (adjusted for day rollover in display)
+            statusText = `Next: ${minutesToTime(bus.nextDepartureTime)}`;
+            stateColor = 'bg-yellow-600';
+        } else if (bus.state === 'IN_SERVICE') {
+            statusText = `In Service`;
+            stateColor = 'bg-green-600';
+        } else if (bus.state === 'REPAIRING') { 
+            const remaining = bus.repairEndTime - getCurrentGameTimeMinutes();
+            statusText = `Repairing (${Math.max(0, remaining)}m)`;
+            stateColor = 'bg-red-700';
+        } else if (bus.state === 'BREAK') { 
+            const remaining = bus.breakEndTime - getCurrentGameTimeMinutes();
+            statusText = `On Break (${Math.max(0, remaining)}m)`;
+            stateColor = 'bg-blue-700';
+        }
+
+
+        // NEW: Maintenance Display and Warning
+        const maintValue = Math.round(bus.maintenance);
+        let maintColor = 'text-green-400';
+        let maintWarning = '';
+        if (maintValue <= 20) {
+            maintColor = 'text-red-400';
+            maintWarning = '(CRITICAL)';
+        } else if (maintValue <= 50) {
+            maintColor = 'text-yellow-400';
+            maintWarning = '(Low)';
+        }
+
+        // NEW: Unassign/Repair Buttons
+        let actionButton = '';
+        if (bus.state === 'IDLE' || bus.state === 'WAITING_FOR_SCHEDULE') {
+            actionButton += `<button onclick="retireBus(${bus.id})" class="text-xs text-red-600 hover:text-red-500 ml-8">Retire</button>`;
+
+            if (maintValue <= 99.9) {
+                                // Determine if a full repair is needed
+                if (maintValue <= 0) {
+                     actionButton = `<button onclick="doFullRepair(${bus.id})" class="text-xs text-red-400 hover:text-red-300 ml-2">Full Repair ($${FULL_REPAIR_COST.toLocaleString()})</button>`;
+                } else {
+                     actionButton = `<button onclick="doGeneralRepair(${bus.id})" class="text-xs text-yellow-400 hover:text-yellow-300 ml-2">Repair ($${GENERAL_REPAIR_COST.toLocaleString()})</button>`;
+                }
+            } else if (bus.routeId !== null && !bus.pendingUnassign) {
+                actionButton = `<button onclick="unassignBus(${bus.id})" class="text-xs text-gray-400 hover:text-white ml-2">Unassign</button>`;
+            }
+        } else if (bus.state === 'IN_SERVICE') {
+             if (bus.pendingUnassign) {
+                 actionButton = `<span class="text-xs text-pink-400 ml-2">Unassign Ordered</span>`;
+             } else {
+                 actionButton = `<button onclick="unassignBus(${bus.id})" class="text-xs text-gray-400 hover:text-white ml-2">Unassign Now</button>`;
+                 if (bus.atTerminal) {
+                     // Still allow break if at terminal and no unassign pending
+                     actionButton += `<button onclick="takeBusBreak(${bus.id})" class="text-xs text-blue-400 hover:text-blue-300 ml-2">Take Break</button>`;
+                 }
+             }
+        }
+
+
+        return `
+            <div class="p-2 rounded-lg bg-gray-700 hover:bg-gray-600" style="border-left: 4px solid ${busModel.color};">
+                <div class="font-bold flex justify-between items-center">
+                    Bus #${bus.id} (${busModel.name})
+                    <span class="text-xs py-0.5 px-2 rounded ${stateColor}">${statusText}</span>
+                </div>
+                <div class="text-xs text-gray-400">Route: ${routeName}</div>
+                <div class="text-xs flex justify-between items-center mt-1">
+                    <span class="${maintColor}">Maint: ${maintValue}% ${maintWarning}</span>
+                    <div>${actionButton}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+// --- NEW: Retirement & Sales Logic ---
+
+// Helper function to calculate sale price
+function calculateSalePrice(maintenance) {
+    // 5K (min) to 35K (max) based on maintenance (0 to 100)
+    return 5000 + Math.floor(maintenance * MAINTENANCE_SALE_FACTOR);
+}
+
+// NEW: Update the Retired Bus Roster Panel
+function updateRetiredList() {
+    const contentDiv = document.getElementById('retired-content');
+    const countSpan = document.getElementById('retired-count');
+    const noRetiredMessage = document.getElementById('no-retired-message');
+    if (noRetiredMessage) {
+        noRetiredMessage.style.display = retiredBuses.length === 0 ? 'block' : 'none';
+    }
+
+    countSpan.textContent = retiredBuses.length;
+    retiredBuses.sort((a,b) => a.id - b.id);
+    contentDiv.innerHTML = retiredBuses.map(bus => {
+        const busModel = BUS_MODELS[bus.type];
+        const salePrice = calculateSalePrice(bus.maintenance);
+        
+        let statusText = '';
+        let unRetireButton = '';
+        
+        if (bus.isTempUnRetired) {
+            statusText = `<span class="text-xs py-0.5 px-2 rounded bg-orange-600">Temp In Service!</span>`;
+            unRetireButton = `<button onclick="retireBus(${bus.id})" class="text-xs text-red-400 hover:text-red-300 ml-2">Re-Retire</button>`;
+        } else {
+             statusText = `<span class="text-xs py-0.5 px-2 rounded bg-gray-600">Retired ${bus.retiredOn}</span>`;
+             unRetireButton = `<button onclick="tempUnRetireBus(${bus.id})" class="text-xs text-blue-400 hover:text-blue-300 ml-2">Un-Retire (15K/m)</button>`;
+        }
+
+        return `
+            <div class="p-2 rounded-lg bg-gray-700 hover:bg-gray-600" style="border-left: 4px solid ${busModel.color};">
+                <div class="font-bold flex justify-between items-center">
+                    Bus #${bus.id} (${busModel.name})
+                    ${statusText}
+                </div>
+                <div class="text-xs flex justify-between items-center mt-1">
+                    <span class="text-gray-400">Maint: ${Math.round(bus.maintenance)}%</span>
+                    <div>
+                        ${unRetireButton}
+                        <button onclick="sellRetiredBus(${bus.id})" class="text-xs text-emerald-400 hover:text-emerald-300 ml-2">
+                            Sell ($${salePrice.toLocaleString('en-US')})
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+
+// NEW: Retire a bus from the active fleet
+function retireBus(busId) {
+    // Check if bus is currently in the active fleet (could be temp un-retired)
+    let busIndex = buses.findIndex(b => b.id === busId);
+    let bus = buses[busIndex];
+
+    if (!bus && retiredBuses.some(b => b.id === busId && b.isTempUnRetired)) {
+        // Bus is currently temp un-retired but not yet re-added to buses array, this is a safeguard
+        bus = retiredBuses.find(b => b.id === busId); 
+    }
+    if (!bus) { 
+        console.error(`Bus ID ${busId} not found in active or temp retired list.`);
+        return; 
+    }
+
+    // Check if bus is not in service
+    if (bus.routeId !== null && bus.state === 'IN_SERVICE') {
+        alert(`Bus #${bus.id} is currently IN SERVICE. Please unassign it first.`);
+        return;
+    }
+
+    // If bus was active, remove it from the active list
+    if (busIndex !== -1) {
+        buses.splice(busIndex, 1);
+    } 
+
+    // Find if the bus is already in the retired list (for re-retiring)
+    let retiredIndex = retiredBuses.findIndex(b => b.id === busId);
+
+    const retiredObject = {
+        id: bus.id,
+        type: bus.type,
+        model: bus.model,
+        maintenance: bus.maintenance,
+        retiredOn: formatTime(simTime),
+        isTempUnRetired: false // Explicitly set to retired
+    };
+
+    if (retiredIndex !== -1) {
+        // Re-retiring a temp un-retired bus
+        retiredBuses[retiredIndex] = retiredObject;
+        console.log(`Bus #${bus.id} re-retired.`);
+    } else {
+        // First time retiring
+        retiredBuses.push(retiredObject);
+        console.log(`Bus #${bus.id} retired with ${Math.round(bus.maintenance)}% maintenance.`);
+    }
+    
+    updateBusList();
+    updateRetiredList();
+}
+
+
+// NEW: Sell a retired bus
+function sellRetiredBus(busId) {
+    const retiredIndex = retiredBuses.findIndex(b => b.id === busId);
+    if (retiredIndex === -1) return;
+
+    const bus = retiredBuses[retiredIndex];
+    if (bus.isTempUnRetired) {
+        alert("Cannot sell a bus that is currently temporarily un-retired. Please re-retire it first.");
+        return;
+    }
+
+    const salePrice = calculateSalePrice(bus.maintenance);
+    
+    if (confirm(`Are you sure you want to sell Bus #${bus.id} for $${salePrice.toLocaleString('en-US')}?`)) {
+        gameMoney += salePrice;
+        retiredBuses.splice(retiredIndex, 1);
+        updateMoneyDisplay();
+        updateRetiredList();
+        console.log(`Bus #${bus.id} sold for $${salePrice.toLocaleString('en-US')}.`);
+    }
+}
+
+
+// NEW: Temporarily un-retire a bus
+function tempUnRetireBus(busId) {
+    const retiredIndex = retiredBuses.findIndex(b => b.id === busId);
+    if (retiredIndex === -1) return;
+
+    const retiredBus = retiredBuses[retiredIndex];
+    
+    if (retiredBus.maintenance <= 0) {
+        alert("This bus has 0% maintenance. It must be sold or kept retired.");
+        return;
+    }
+
+    if (confirm(`Temporarily un-retire Bus #${retiredBus.id}? Maintenance cost will be $${TEMP_UNRETIRE_COST_MONTHLY.toLocaleString('en-US')} per game month. It will be sold if maintenance hits 0%.`)) {
+        
+        // Remove from retired list (it will be tracked in the active list)
+        retiredBuses.splice(retiredIndex, 1);
+
+        const newBus = {
+            id: retiredBus.id,
+            type: retiredBus.type,
+            routeId: null,
+            position: { lineId: null, t: 0, x: 0, y: 0, rotation: 0 },
+            state: 'IDLE',
+            pathIndex: 0, 
+            currentSegment: null, 
+            path: null, 
+            model: retiredBus.model,
+            maintenance: retiredBus.maintenance, 
+            atTerminal: false,
+            currentBreakTime: 0,
+            repairEndTime: undefined,
+            breakEndTime: undefined,
+            nextDepartureTime: undefined,
+            pendingUnassign: false,
+            isTempUnRetired: true // NEW FLAG
+        };
+        buses.push(newBus);
+
+        updateBusList();
+        updateRetiredList();
+        console.log(`Bus #${newBus.id} temporarily un-retired.`);
+    }
+}
+
+
+// NEW: Function to handle monthly costs and temporary un-retire rules
+function handleMonthlyCosts() {
+    console.log("Monthly cost check initiated.");
+    
+    // Loop through a copy of the active buses in case of sales/removal
+    const busesCopy = [...buses];
+
+    for (const bus of busesCopy) {
+        if (bus.isTempUnRetired) {
+            gameMoney -= TEMP_UNRETIRE_COST_MONTHLY;
+            console.log(`Bus #${bus.id} (Temp Un-Retired) incurred $${TEMP_UNRETIRE_COST_MONTHLY.toLocaleString()} maintenance cost.`);
+
+            // CRITICAL: Check for Maintenance at 0% and enforce sale
+            if (bus.maintenance <= 0) {
+                // Find and remove from the main array
+                const busIndex = buses.findIndex(b => b.id === bus.id);
+                if (busIndex !== -1) {
+                    buses.splice(busIndex, 1);
+                }
+                
+                gameMoney += AUTO_SALE_PRICE_CRITICAL;
+                updateMoneyDisplay();
+                updateBusList();
+                
+                console.warn(`Bus #${bus.id} (Temp Un-Retired) maintenance hit 0% and was automatically sold for $${AUTO_SALE_PRICE_CRITICAL.toLocaleString()}!`);
+            }
+        } 
+    }
+    
+    updateMoneyDisplay();
+    // After potential sales, the bus list is updated
+    updateBusList();
+}
+
+
+// --- Initialization Call ---
+
+// MODIFIED: In the Initialization section, call the new UI function
+// ... (after updateBusList and before draw) ...
+updateBusList(); 
+// NEW: Initialize retired roster display
+updateRetiredList(); 
+
+// MODIFIED: Unassign bus logic to handle in-service buses with a flag
+function unassignBus(busId) {
+    const bus = buses.find(b => b.id === busId);
+    if (!bus) return;
+
+    // Immediate unassignment if bus is not in service
+    if (bus.state !== 'IN_SERVICE' && bus.state !== 'BREAK' && bus.state !== 'REPAIRING') {
+        // Clear route assignment
+        bus.routeId = null;
+        bus.path = null;
+        bus.pathIndex = 0;
+        bus.nextDepartureTime = undefined;
+        bus.pendingUnassign = false; 
+        
+        // Reset state and position to depot (IDLE)
+        bus.state = 'IDLE'; 
+        bus.atTerminal = false;
+        bus.position.x = 0; // Off-screen location to simulate depot
+        bus.position.y = 0; 
+
+        console.log(`Bus #${busId} unassigned from route and returned to depot.`);
+    } else if (bus.state === 'IN_SERVICE') {
+        if (bus.pendingUnassign) {
+             alert("Unassignment is already pending for this bus. It will be taken off at the next terminal.");
+             return;
+        }
+        // Set flag for unassignment at next terminal
+        bus.pendingUnassign = true;
+        console.log(`Bus #${busId} marked for unassignment. Will be taken off route at the next terminal.`);
+    } else {
+         alert(`Bus #${bus.id} is currently ${bus.state}. Wait for it to return to IDLE or WAITING_FOR_SCHEDULE, or wait for its current task to finish.`);
+         return;
+    }
+    
+    updateBusList();
+}
+
+// NEW: Take a break
+function takeBusBreak(busId) {
+    const bus = buses.find(b => b.id === busId);
+    if (!bus || bus.state !== 'IN_SERVICE' || !bus.atTerminal) return;
+
+    bus.state = 'BREAK';
+    bus.breakEndTime = getCurrentGameTimeMinutes() + BREAK_TIME_MINS;
+    bus.atTerminal = false; // The bus leaves the terminal spot to rest
+    bus.pathIndex = 0; // Stop movement
+
+    console.log(`Bus #${busId} taking a ${BREAK_TIME_MINS} minute break.`);
+    updateBusList();
+}
+
+
+// NEW: General Repair
+function doGeneralRepair(busId) {
+    const bus = buses.find(b => b.id === busId);
+    if (!bus || bus.state !== 'IDLE' && bus.state !== 'WAITING_FOR_SCHEDULE') {
+        alert("Bus must be IDLE or WAITING_FOR_SCHEDULE to repair.");
+        return;
+    }
+    if (gameMoney < GENERAL_REPAIR_COST) {
+        alert(`Need $${GENERAL_REPAIR_COST.toLocaleString()} for general repair.`);
+        return;
+    }
+    
+    gameMoney -= GENERAL_REPAIR_COST;
+    bus.state = 'REPAIRING';
+    bus.repairEndTime = getCurrentGameTimeMinutes() + REPAIR_TIME_MINS;
+    bus.maintenance = 100; // General repair restores to full maintenance
+    
+    updateMoneyDisplay();
+    updateBusList();
+    console.log(`Bus #${busId} started general repair. Will finish at ${minutesToTime(bus.repairEndTime)}.`);
+}
+
+// NEW: Full Repair (for 0% maintenance)
+function doFullRepair(busId) {
+    const bus = buses.find(b => b.id === busId);
+    if (!bus || bus.state !== 'IDLE' && bus.state !== 'WAITING_FOR_SCHEDULE') {
+        alert("Bus must be IDLE or WAITING_FOR_SCHEDULE to repair.");
+        return;
+    }
+    if (bus.maintenance > 0) {
+        alert("Full repair is only needed when maintenance is 0% (CRITICAL).");
+        return;
+    }
+    if (gameMoney < FULL_REPAIR_COST) {
+        alert(`Need $${FULL_REPAIR_COST.toLocaleString()} for full repair.`);
+        return;
+    }
+
+    gameMoney -= FULL_REPAIR_COST;
+    bus.state = 'REPAIRING';
+    bus.repairEndTime = getCurrentGameTimeMinutes() + REPAIR_TIME_MINS;
+    bus.maintenance = 100; // Full repair restores to full maintenance
+    
+    updateMoneyDisplay();
+    updateBusList();
+    console.log(`Bus #${busId} started full repair. Will finish at ${minutesToTime(bus.repairEndTime)}.`);
+}
+
+
+// --- Revenue Simulation ---
+
+function simulatePassengerRevenue() {
+    if (simTime.isPaused) return;
+
+    const minPassengers = 5;
+    const maxPassengers = 10;
+    
+    busStops.forEach(stop => {
+        // Only stops assigned to an active route can generate passengers
+        if (stop.routeAssignments.length > 0) {
+            // Add between 5 and 10 passengers to the stop
+            const newPassengers = Math.floor(Math.random() * (maxPassengers - minPassengers + 1)) + minPassengers;
+            stop.passengersWaiting = (stop.passengersWaiting || 0) + newPassengers;
+            
+            // Limit max waiting (optional decay to simulate people leaving)
+            if (stop.passengersWaiting > 150) {
+                stop.passengersWaiting = Math.round(stop.passengersWaiting * 0.98);
+            }
+        }
+    });
+    draw(); // Redraw map to update passenger count
+}
+
+
+// --- Bus Management ---
+
+function buyBus(type) {
+    const model = BUS_MODELS[type];
+    if (gameMoney >= model.cost) {
+        gameMoney -= model.cost;
+        
+        const newBus = {
+            id: nextBusId++,
+            type: type,
+            routeId: null,
+            position: { lineId: null, t: 0, x: 0, y: 0, rotation: 0 },
+            state: 'IDLE',
+            pathIndex: 0, 
+            currentSegment: null, 
+            path: null, 
+            model: model,
+            maintenance: 100, // NEW: Start with full maintenance
+            atTerminal: false, // NEW
+            currentBreakTime: 0, // NEW
+            repairEndTime: undefined, // NEW
+            breakEndTime: undefined, // NEW
+            nextDepartureTime: undefined,
+            pendingUnassign: false, // ADDED
+            isTempUnRetired: false // NEW FLAG: Default for new buses
+        };
+        buses.push(newBus);
+        updateMoneyDisplay();
+        updateBusList();
+        console.log(`Purchased ${model.name}. Bus ID: ${newBus.id}`);
+    } else {
+        console.error(`Not enough money to buy ${model.name}. Need $${model.cost.toLocaleString()}.`);
+    }
+}
+
+function assignBusToRoute(routeId) {
+    // FIX: Convert the string routeId (from the HTML button) to a number 
+    const numericRouteId = parseInt(routeId);
+    
+    const route = routes.find(r => r.id === numericRouteId);
+    if (!route) {
+        console.error("Route not found. Please create and finalize a route first."); 
+        return;
+    }
+    
+    const busId = prompt(`Enter the ID of the bus you want to assign to Route ${route.name}:`);
+    if (!busId) return;
+
+    const bus = buses.find(b => String(b.id) === busId);
+    if (!bus) {
+        console.error(`Bus ID ${busId} not found.`);
+        return;
+    }
+    // MODIFIED: Check for REPAIRING state too
+    if (bus.state !== 'IDLE' && bus.state !== 'WAITING_FOR_SCHEDULE') {
+        alert(`Bus #${bus.id} is currently ${bus.state}. Wait for it to return to IDLE or WAITING_FOR_SCHEDULE.`);
+        return;
+    }
+
+    // 1. Get the full path segments for the bus to follow
+    bus.path = getRoutePathSegments(route);
+    if (bus.path.length === 0) {
+        console.error("Cannot assign bus: Route path is empty or invalid.");
+        return;
+    }
+
+    // 2. Assign route, set initial state and schedule
+    bus.routeId = route.id; 
+    bus.state = 'WAITING_FOR_SCHEDULE'; 
+    bus.pathIndex = 0;
+    // MODIFIED: Use the new conflict-checking function
+    bus.nextDepartureTime = findNextAvailableDepartureTime(route, bus.id); // Set first departure
+    bus.pendingUnassign = false; // Reset unassign flag on new assignment
+    
+    // Find Terminal A stop and its location
+    const terminalAStop = busStops.find(bs => bs.id === route.stops[0].stopId);
+    if (terminalAStop) {
+        // Position bus at terminal A, ready for service
+        bus.position.x = terminalAStop.x;
+        bus.position.y = terminalAStop.y;
+    }
+    
+    console.log(`Bus #${bus.id} assigned to Route ${route.name}. Next departure: ${minutesToTime(bus.nextDepartureTime)}.`);
+    updateBusList();
+}
+
+// --- Bus Movement Logic (MVP) ---
+
+// NEW: Calculate the earliest possible departure time based on schedule,
+// ignoring conflicts with other buses.
+function calculateBaseDepartureTime(schedule, referenceTimeMinutes) {
+    const startMinutes = schedule.startH * 60 + schedule.startM;
+    const endMinutes = schedule.endH * 60 + schedule.endM;
+    const freq = schedule.freqMins;
+
+    const nowMinutes = referenceTimeMinutes;
+
+    // 1. If we are past the end time, schedule for tomorrow's start
+    if (nowMinutes >= endMinutes) {
+        return startMinutes + (24 * 60); 
+    }
+    
+    // 2. If current time is before the start time, set for today's start
+    if (nowMinutes < startMinutes) {
+        return startMinutes;
+    }
+
+    // 3. Find next departure within the operating window
+    const elapsedSinceStart = nowMinutes - startMinutes;
+    
+    // Calculate the next multiple of frequency
+    // Math.ceil(elapsed / freq) * freq is the next departure relative to startMinutes
+    let nextDepartureRelative = Math.ceil(elapsedSinceStart / freq) * freq;
+    
+    // If the next calculated departure time is exactly 'now' or past, schedule for the next slot
+    // Add a tolerance slightly greater than 0 to ensure we don't start at the exact minute if the loop just finished
+    if ((startMinutes + nextDepartureRelative) < nowMinutes + 1) { 
+         nextDepartureRelative += freq;
+    }
+
+    let nextDepartureMinutes = startMinutes + nextDepartureRelative;
+
+    // 4. Final check if calculated time exceeds the end time
+    if (nextDepartureMinutes > endMinutes) {
+         return startMinutes + (24 * 60); 
+    }
+
+    return nextDepartureMinutes;
+}
+
+// NEW: Function to find the earliest available slot, considering other buses.
+function findNextAvailableDepartureTime(route, callingBusId) {
+    const schedule = route.schedule;
+    const freq = schedule.freqMins;
+    const endMinutes = schedule.endH * 60 + schedule.endM;
+    
+    let currentNextDeparture = calculateBaseDepartureTime(schedule, getCurrentGameTimeMinutes());
+    
+    // The maximum possible time to check is tomorrow's departure time (24 hours after the schedule ends)
+    const MAX_CHECK_TIME = endMinutes + 24 * 60;
+
+    // Loop until we find an available slot or exceed the operating window + 24 hours
+    while (currentNextDeparture < MAX_CHECK_TIME) {
+        
+        // Check if we rolled over into the next day but missed the start time (e.g., if a conflict pushed us past 09:00 of the next day)
+        if (currentNextDeparture > endMinutes && (currentNextDeparture % (24 * 60)) > (schedule.endH * 60 + schedule.endM)) {
+             // If we've passed the end time of the next day, reschedule using the base function 
+             // to jump to the start of the day after next.
+             currentNextDeparture = calculateBaseDepartureTime(schedule, currentNextDeparture);
+        }
+
+        // Collect departure times of all *other* active buses on this route
+        const conflictingTimes = buses
+            .filter(b => 
+                b.routeId === route.id && 
+                b.id !== callingBusId && 
+                b.nextDepartureTime !== undefined &&
+                // Only consider buses that are either waiting or are currently in service 
+                // and whose next departure time is set for the current operating window (or tomorrow's start)
+                (b.state === 'WAITING_FOR_SCHEDULE' || b.state === 'IN_SERVICE')
+            )
+            .map(b => b.nextDepartureTime);
+
+        // Check for conflict
+        if (!conflictingTimes.includes(currentNextDeparture)) {
+            // Found a clear slot!
+            return currentNextDeparture;
+        }
+
+        // Conflict found, check the next scheduled time slot
+        currentNextDeparture += freq;
+    }
+    
+    // Fallback: Return the last calculated time (may be far in the future if every slot is taken)
+    return currentNextDeparture; 
+}
+
+
+// Helper function to find the coordinates of the road segments based on line nodes.
+function getRoutePathSegments(route) {
+    const pathSegments = [];
+    // Ensure route.lineId is a number if lines.find expects it (it should be since it's from stop.lineId)
+    const line = lines.find(l => l.id === route.lineId);
+    if (!line) return [];
+
+    // Outbound (A -> Z)
+    for (let i = 0; i < line.nodeIds.length - 1; i++) {
+        const n0 = nodes.find(n => n.id === line.nodeIds[i]);
+        const n1 = nodes.find(n => n.id === line.nodeIds[i+1]);
+        if (n0 && n1) {
+            pathSegments.push({ 
+                x: n0.x, y: n0.y, 
+                nextX: n1.x, nextY: n1.y, 
+                lineId: line.id, 
+                index: i,
+                isReversed: false, // Outbound direction
+                isTerminal: false // NEW
+            });
+        }
+    }
+    
+    // Inbound (Z -> A) - Reversing the list for a simple loop
+    const reversedSegments = [];
+    for (let i = line.nodeIds.length - 1; i > 0; i--) {
+        const n0 = nodes.find(n => n.id === line.nodeIds[i]);
+        const n1 = nodes.find(n => n.id === line.nodeIds[i-1]);
+        if (n0 && n1) {
+             reversedSegments.push({
+                x: n0.x, y: n0.y,
+                nextX: n1.x, nextY: n1.y,
+                lineId: line.id,
+                index: i - 1,
+                isReversed: true, // Inbound direction
+                isTerminal: false // NEW
+            });
+        }
+    }
+    
+    // MODIFIED: Mark terminal segments for break/unassign logic
+    // The segment leading *into* Terminal A is the last segment of the inbound path
+    if (reversedSegments.length > 0) {
+        reversedSegments[reversedSegments.length - 1].isTerminal = true;
+    }
+    // The segment leading *into* Terminal Z is the last segment of the outbound path
+    if (pathSegments.length > 0) {
+        pathSegments[pathSegments.length - 1].isTerminal = true;
+    }
+
+
+    return [...pathSegments, ...reversedSegments];
+}
+
+function updateBuses(deltaTimeMs) {
+    const FARE = 50; 
+    const nowMinutes = getCurrentGameTimeMinutes();
+
+    buses.forEach(bus => {
+        const route = routes.find(r => r.id === bus.routeId);
+        bus.atTerminal = false; // Reset terminal flag at start of update
+
+        // --- REPAIRING / BREAK LOGIC ---
+        if (bus.state === 'REPAIRING') {
+            if (nowMinutes >= bus.repairEndTime) {
+                bus.state = bus.routeId ? 'WAITING_FOR_SCHEDULE' : 'IDLE';
+                bus.repairEndTime = undefined;
+                updateBusList();
+                console.log(`Bus #${bus.id} repair finished. State: ${bus.state}.`);
+            }
+            return;
+        }
+
+        if (bus.state === 'BREAK') {
+            if (nowMinutes >= bus.breakEndTime) {
+                // Bus is ready to start service again
+                bus.state = 'WAITING_FOR_SCHEDULE';
+                bus.breakEndTime = undefined;
+                // Recalculate next departure time to fit the schedule after the break
+                // MODIFIED: Use the new conflict-checking function
+                bus.nextDepartureTime = findNextAvailableDepartureTime(route, bus.id);
+                updateBusList();
+                console.log(`Bus #${bus.id} break finished. Next departure: ${minutesToTime(bus.nextDepartureTime)}.`);
+            }
+            return;
+        }
+
+        // Only process buses assigned to a route and not paused/broken
+        if (!route) return; 
+
+        const schedule = route.schedule;
+        const endMinutes = schedule.endH * 60 + schedule.endM;
+
+
+        // --- SCHEDULING LOGIC (IDLE / WAITING_FOR_SCHEDULE) ---
+        if (bus.state === 'WAITING_FOR_SCHEDULE' || bus.state === 'IDLE') {
+            
+            // NEW: Maintenance check - DO NOT DEPART IF CRITICAL
+            if (bus.maintenance <= 0) {
+                 bus.state = 'IDLE'; // Force out of service
+                 console.warn(`Bus #${bus.id} is CRITICAL (0% maint). Needs full repair.`);
+                 updateBusList();
+                 return;
+            }
+
+            // 1. Check if it's time to deploy the bus (using tolerance for smooth start)
+            if (nowMinutes >= bus.nextDepartureTime && nowMinutes < endMinutes) {
+                bus.state = 'IN_SERVICE';
+                bus.pathIndex = 0; // Start the route from the beginning
+                console.log(`Bus #${bus.id} starting service on Route ${route.name}. Time: ${minutesToTime(nowMinutes)}.`);
+                updateBusList();
+            } else if (bus.nextDepartureTime === undefined || bus.nextDepartureTime < nowMinutes) {
+                // Ensure next departure is calculated if it somehow got missed or is in the past
+                // MODIFIED: Use the new conflict-checking function
+                bus.nextDepartureTime = findNextAvailableDepartureTime(route, bus.id);
+                if(bus.state !== 'WAITING_FOR_SCHEDULE') bus.state = 'WAITING_FOR_SCHEDULE';
+            }
+            return; // Don't move if waiting/idle/broken
+        }
+        
+        // --- END-OF-SERVICE LOGIC ---
+        // This check is now redundant if the bus is waiting for tomorrow's schedule, 
+        // but kept for forcing IN_SERVICE buses off-route if they miss the last stop
+        if (bus.state === 'IN_SERVICE' && nowMinutes >= endMinutes && bus.nextDepartureTime === undefined) { 
+            // Bus must stop running. Sets it to IDLE (depot) and schedules for tomorrow.
+            bus.state = 'IDLE'; 
+            bus.pathIndex = 0; 
+            // MODIFIED: Use the new conflict-checking function
+            bus.nextDepartureTime = findNextAvailableDepartureTime(route, bus.id);
+            console.log(`Bus #${bus.id} ended service on Route ${route.name}. (Time: ${minutesToTime(nowMinutes)})`);
+            updateBusList();
+            return; // Stop processing movement
+        }
+
+        // --- MOVEMENT LOGIC (Only runs if IN_SERVICE and not past end time) ---
+        if (bus.state === 'IN_SERVICE') {
+            
+            let currentSegment = bus.path[bus.pathIndex];
+            
+            if (!currentSegment) {
+                // End of full loop (A->Z->A completed)
+                
+                // NEW: MAINTENANCE DECAY
+                bus.maintenance = Math.max(0, bus.maintenance - MAINTENANCE_DECAY_PER_LAP);
+                
+                // --- ROUTE COMPLETION REWARD ---
+                const numStopsOnRoute = route.stops.length;
+                const bonus = 1000 * Math.floor(numStopsOnRoute / 2);
+                gameMoney += bonus;
+                updateMoneyDisplay();
+                console.log(`Route ${route.name} completed! Earned $${bonus.toLocaleString('en-US')} bonus. Maint: ${Math.round(bus.maintenance)}%`);
+                // --- END REWARD ---
+
+                // MODIFIED: Calculate next departure time for the next loop run, checking conflicts
+                bus.nextDepartureTime = findNextAvailableDepartureTime(route, bus.id);
+                
+                // Check if the scheduled time is for tomorrow or later
+                if (bus.nextDepartureTime >= endMinutes) {
+                    bus.state = 'IDLE'; 
+                    console.log(`Bus #${bus.id} completed last lap of the day. Next departure: ${minutesToTime(bus.nextDepartureTime)}.`);
+                } else {
+                    bus.state = 'WAITING_FOR_SCHEDULE'; // Wait for next scheduled run
+                    console.log(`Bus #${bus.id} completed lap. Next departure: ${minutesToTime(bus.nextDepartureTime)}.`);
+                }
+                
+                bus.pathIndex = 0; // Reset path regardless of next state
+                
+                // MODIFIED: Bus snaps to the Terminal A position after loop completion
+                const terminalAStop = busStops.find(bs => bs.id === route.stops[0].stopId);
+                if (terminalAStop) {
+                    bus.position.x = terminalAStop.x;
+                    bus.position.y = terminalAStop.y;
+                }
+                
+                updateBusList();
+                return;
+            }
+            
+            // NEW: Speed penalty for low maintenance
+            let maintSpeedFactor = 1.0;
+            if (bus.maintenance < 50) {
+                 maintSpeedFactor = 0.5 + (bus.maintenance / 100); // Between 0.5 and 1.0
+            }
+
+
+            const model = bus.model;
+            // Scale movement speed by the game speed multiplier (newSpeed / 60)
+            const speedMultiplier = simTime.speed / 60; 
+            // MODIFIED: Apply maintenance speed penalty
+            const speed = model.speed * maintSpeedFactor * (deltaTimeMs / 16.66) * speedMultiplier; 
+            
+            const dx = currentSegment.nextX - bus.position.x;
+            const dy = currentSegment.nextY - bus.position.y;
+            const distanceToTarget = Math.hypot(dx, dy);
+
+            // 1. Calculate rotation
+            bus.position.rotation = Math.atan2(dy, dx);
+            
+            if (distanceToTarget > speed) {
+                // Move towards the target
+                const moveX = (dx / distanceToTarget) * speed;
+                const moveY = (dy / distanceToTarget) * speed;
+                bus.position.x += moveX;
+                bus.position.y += moveY;
+            } else {
+                // Reached the node, snap and move to the next segment
+                bus.position.x = currentSegment.nextX;
+                bus.position.y = currentSegment.nextY;
+                bus.pathIndex++;
+                
+                // Check if bus is at a Terminal node (A or Z)
+                if (currentSegment.isTerminal) {
+                    bus.atTerminal = true;
+                }
+                
+                // NEW: CHECK FOR PENDING UNASSIGN AT TERMINAL
+                if (bus.pendingUnassign && currentSegment.isTerminal) {
+                    // Perform the unassignment (return to depot)
+                    bus.routeId = null;
+                    bus.path = null;
+                    bus.pathIndex = 0;
+                    bus.nextDepartureTime = undefined;
+                    bus.state = 'IDLE';
+                    bus.atTerminal = false;
+                    bus.pendingUnassign = false; // Reset flag
+                    bus.position.x = 0; 
+                    bus.position.y = 0; 
+                    console.log(`Bus #${bus.id} taken off route at terminal due to pending unassign.`);
+                    updateBusList();
+                    return; // Stop processing movement for this bus
+                }
+
+                
+                // Check for Bus Stop at or near the segment's end node
+                const busStopNearNode = busStops.find(bs => 
+                    Math.hypot(bs.x - currentSegment.nextX, bs.y - currentSegment.nextY) < 30
+                );
+                
+                if (busStopNearNode) {
+                    const waiting = busStopNearNode.passengersWaiting || 0;
+                    const boarded = Math.min(waiting, model.capacity); 
+                    
+                    if (boarded > 0) {
+                         const revenue = boarded * FARE;
+                         gameMoney += revenue;
+                         busStopNearNode.passengersWaiting -= boarded;
+                         updateMoneyDisplay();
+                         draw(); 
+                    }
+                }
+            }
+        }
+    });
+}
+
+// --- Route Customization Menu (NEW) ---
+
+function openRouteCustomization(routeName) {
+    // Collect Start Hour
+    let startH = parseInt(prompt(`Route ${routeName}: Enter the START HOUR (0-23) for service (e.g., 9 for 09:00):`, 9));
+    if (isNaN(startH) || startH < 0 || startH > 23) {
+        alert("Invalid Start Hour. Route creation cancelled.");
+        return null;
+    }
+    
+    // Collect End Hour
+    let endH = parseInt(prompt(`Route ${routeName}: Enter the END HOUR (0-23) for service (e.g., 20 for 20:00):`, 23));
+    if (isNaN(endH) || endH < 0 || endH > 23) {
+        alert("Invalid End Hour. Route creation cancelled.");
+        return null;
+    }
+
+    if (endH <= startH) {
+         alert("End Hour must be later than Start Hour. Route creation cancelled.");
+         return null;
+    }
+
+    // Collect Frequency
+    let freqMins = parseInt(prompt(`Route ${routeName}: Enter the BUS FREQUENCY (minutes) for the service (e.g., 30):`, 30));
+    if (isNaN(freqMins) || freqMins <= 0 || freqMins > 120) {
+        alert("Invalid Frequency (must be 1-120 minutes). Route creation cancelled.");
+        return null;
+    }
+    
+    return {
+        startH: startH,
+        startM: 0, 
+        endH: endH,
+        endM: 0, 
+        freqMins: freqMins
+    };
+}
+
+
+// --- Route Management Functions ---
+
+function startRouteCreation() {
+    if (routeManager.isCreating) {
+        if (confirm("Are you sure you want to cancel route creation?")) {
+            resetRouteCreation();
+        }
+        return;
+    }
+
+    const name = prompt("Enter a name for the new route (e.g., 'Downtown Loop'):");
+    if (!name) return;
+
+    // NEW: Open customization menu
+    const schedule = openRouteCustomization(name);
+    if (!schedule) return;
+    
+    routeManager.isCreating = true;
+    currentMode = 'ROUTE_SELECT_A';
+    routeManager.tempRoute = {
+        name: name,
+        color: randomColor(),
+        stops: [], 
+        selectedLineId: null,
+        terminalAId: null,
+        terminalZId: null,
+        schedule: schedule // Store custom schedule
+    };
+
+    console.log(`Starting route creation for: ${name}. Click a bus stop to set Terminal A.`);
+    updateRouteControls();
+    draw();
+}
+
+function updateRouteControls() {
+    const controlsDiv = document.getElementById('route-controls');
+    
+    if (!routeManager.isCreating) {
+        controlsDiv.innerHTML = `<button id="start-route-btn" onclick="startRouteCreation()" class="control-button bg-purple-600 hover:bg-purple-700 text-white">Start New Route</button>`;
+        return;
+    }
+
+    const temp = routeManager.tempRoute;
+    let instructions = "";
+    
+    if (currentMode === 'ROUTE_SELECT_A') {
+        instructions = "Select a stop to set **Terminal A** (Outbound start).";
+    } else if (currentMode === 'ROUTE_SELECT_STOP') {
+        const outCount = temp.stops.filter(s => s.path === 'OUTBOUND' && s.type === 'OUTBOUND').length;
+        instructions = `Click stops for **Outbound Path** (Stop ${outCount + 1}).`;
+    } else if (currentMode === 'ROUTE_SELECT_Z') {
+        instructions = `Select a stop to set **Terminal Z** (Turnaround).`;
+    } else if (currentMode === 'ROUTE_SELECT_INBOUND') {
+        const inCount = temp.stops.filter(s => s.path === 'INBOUND' && s.type === 'INBOUND').length;
+        instructions = `Click stops for **Inbound Path** (Stop ${inCount + 1}). Click Terminal A to finish.`;
+    }
+
+    let routeInfo = `
+        <div class="text-white text-sm">
+            <div class="font-bold mb-1" style="color:${temp.color}">Route: ${temp.name}</div>
+            <p class="text-xs text-gray-400">Current Step: ${instructions}</p>
+        </div>
+        <div class="flex gap-2 mt-2">
+            <button onclick="resetRouteCreation()" class="control-button bg-red-600 hover:bg-red-700 text-white flex-1 text-sm py-2">Cancel</button>
+            <button id="set-z-btn" onclick="setTerminalZMode()" class="control-button bg-pink-600 hover:bg-pink-700 text-white flex-1 text-sm py-2" ${currentMode === 'ROUTE_SELECT_STOP' ? '' : 'disabled'}>
+                Make it Terminal Z
+            </button>
+        </div>
+    `;
+
+    controlsDiv.innerHTML = routeInfo;
+}
+
+function setTerminalZMode() {
+    if (currentMode === 'ROUTE_SELECT_STOP') {
+        currentMode = 'ROUTE_SELECT_Z';
+        updateRouteControls();
+        console.log("Select a stop to set Terminal Z.");
+    }
+}
+
+function resetRouteCreation() {
+    routeManager = { isCreating: false, tempRoute: null };
+    currentMode = 'LINE_DRAW';
+    canvas.style.cursor = 'crosshair';
+    updateRouteControls();
+    draw();
+}
+
+function finalizeRoute() {
+    const temp = routeManager.tempRoute;
+    const finalRoute = {
+        id: Date.now(),
+        name: temp.name,
+        color: temp.color,
+        stops: temp.stops.map((s, index) => ({...s, order: index})), 
+        schedule: temp.schedule,
+        lineId: temp.selectedLineId
+    };
+
+    // Assign stop orders (0 to N) and update busStop assignments
+    finalRoute.stops.forEach((stop, index) => {
+        const busStop = busStops.find(bs => bs.id === stop.stopId);
+        if (busStop) {
+            busStop.routeAssignments.push({ routeId: finalRoute.id, order: index, type: stop.type, name: finalRoute.name });
+        }
+    });
+
+    routes.push(finalRoute);
+    console.log(`Route ${finalRoute.name} finalized! Total stops (A -> Z -> A): ${finalRoute.stops.length}`);
+
+    // Clean up
+    resetRouteCreation();
+    updateRouteList();
+}
+
+// --- Event Handlers ---
+
+function onClick(e) {
+  const x0 = snapToGrid(e.offsetX);
+  const y0 = snapToGrid(e.offsetY);
+  const clickX = e.offsetX;
+  const clickY = e.offsetY;
+
+  const station = findStationAt(x0, y0);
+  const seg = findLineSegmentAt(clickX, clickY);
+  const busStop = findBusStopAt(clickX, clickY);
+
+  // 1. Route Definition Logic (Highest Priority)
+  if (routeManager.isCreating && busStop) {
+      const temp = routeManager.tempRoute;
+      const existing = temp.stops.find(s => s.stopId === busStop.id);
+
+      if (currentMode === 'ROUTE_SELECT_A') {
+          // Set Terminal A
+          temp.terminalAId = busStop.id;
+          temp.selectedLineId = busStop.lineId;
+          temp.stops.push({ stopId: busStop.id, type: 'A', path: 'OUTBOUND' });
+          currentMode = 'ROUTE_SELECT_STOP';
+          canvas.style.cursor = 'pointer';
+          updateRouteControls();
+
+      } else if (currentMode === 'ROUTE_SELECT_STOP') {
+          // Add Outbound Stop
+          if (busStop.lineId !== temp.selectedLineId) { console.error("Stops must be on the same road segment."); return; }
+          if (existing) { console.warn("Stop already added to the route."); return; }
+          temp.stops.push({ stopId: busStop.id, type: 'OUTBOUND', path: 'OUTBOUND' });
+          updateRouteControls();
+          
+      } else if (currentMode === 'ROUTE_SELECT_Z') {
+          // Set Terminal Z
+          if (busStop.lineId !== temp.selectedLineId) { console.error("Terminal Z must be on the same road segment."); return; }
+          
+          temp.terminalZId = busStop.id;
+          // If Z was already an OUTBOUND stop, find it and change its type to 'Z'
+          const existingOutbound = temp.stops.find(s => s.stopId === busStop.id && s.path === 'OUTBOUND');
+          if (existingOutbound) {
+            existingOutbound.type = 'Z';
+          } else {
+            // Add Z if it wasn't already selected
+            temp.stops.push({ stopId: busStop.id, type: 'Z', path: 'OUTBOUND' });
+          }
+          
+          currentMode = 'ROUTE_SELECT_INBOUND';
+          updateRouteControls();
+
+      } else if (currentMode === 'ROUTE_SELECT_INBOUND') {
+          const terminalAStop = temp.stops.find(s => s.type === 'A');
+
+          if (busStop.id === terminalAStop.stopId) {
+             // MODIFIED: Finalize the route when Terminal A is selected again
+             temp.stops.push({ stopId: busStop.id, type: 'A-END', path: 'INBOUND' });
+             finalizeRoute();
+          } else {
+             // Add regular Inbound Stop
+             if (busStop.lineId !== temp.selectedLineId) { console.error("Inbound stops must be on the same road segment."); return; }
+             
+             // Check if stop is already added as part of Z->A path
+             const inboundExisting = temp.stops.filter(s => s.path === 'INBOUND').find(s => s.stopId === busStop.id);
+             if (inboundExisting) { console.warn("Stop already added to the inbound path."); return; }
+
+             temp.stops.push({ stopId: busStop.id, type: 'INBOUND', path: 'INBOUND' });
+             updateRouteControls();
+          }
+      }
+      draw();
+      return;
+  }
+
+  // 2. Map Construction Mode Logic
+  if (currentMode === 'ADD_BUS_STOP' && seg) {
+    addBusStopToSegment(seg, clickX, clickY);
+    draw();
+    return;
+  }
+  
+  if (currentMode === 'LINE_DRAW') {
+    // 2a. Joint Insertion
+    if (seg) {
+      const newJoint = { id: Date.now(), x: snapToGrid(seg.projX), y: snapToGrid(seg.projY), isJoint: true };
+      if (findNodeAt(newJoint.x, newJoint.y)) { return; }
+      nodes.push(newJoint);
+      seg.line.nodeIds.splice(seg.i + 1, 0, newJoint.id);
+      draw();
+      return;
+    }
+
+    // 2b. Station creation/line continuation logic
+    if (activeLine && station) {
+      const lastId = activeLine.nodeIds[activeLine.nodeIds.length - 1];
+      if (lastId !== station.id) {
+        activeLine.nodeIds.push(station.id);
+      }
+    } else if (!activeLine && station) {
+      activeLine = { id: Date.now(), color: randomColor(), nodeIds: [station.id] };
+      lines.push(activeLine);
+    } else if (!station) {
+      const s = { id: Date.now(), x: x0, y: y0 };
+      stations.push(s);
+      nodes.push({ id: s.id, x: s.x, y: s.y, isJoint: false });
+    } else if (activeLine && station && station.id === activeLine.nodeIds[0]) {
+      activeLine = null;
+    }
+  }
+
+  draw();
+}
+
+function onMove(e) {
+  const x = e.offsetX; const y = e.offsetY;
+  hoverStation = findStationAt(x, y) || null;
+  hoverBusStop = findBusStopAt(x, y) || null;
+  draw(e);
+}
+
+// --- Utility Functions ---
+
+function snapToGrid(v) { return Math.round(v / gridSize) * gridSize; }
+function findNodeAt(x,y) { return nodes.find(n => Math.hypot(n.x - x, n.y - y) < 10); }
+function findStationAt(x,y) { return stations.find(s => Math.hypot(s.x - x, s.y - y) < 10); }
+function findBusStopAt(x, y) { return busStops.find(bs => Math.hypot(bs.x - x, bs.y - y) < 12); }
+function randomColor() {
+  const colors = ["#FF5050","#00B3B3","#FFB347","#A650FF","#46C646", "#00A0A0", "#B36B00"];
+  return colors[Math.floor(Math.random()*colors.length)];
+}
+
+function toggleMapMode() {
+  if (routeManager.isCreating) {
+    console.warn("Cannot change mode while creating a route.");
+    return;
+  }
+  currentMode = (currentMode === 'ADD_BUS_STOP' ? 'LINE_DRAW' : 'ADD_BUS_STOP');
+  const btn = document.getElementById('mode-btn');
+  if (currentMode === 'ADD_BUS_STOP') {
+    btn.textContent = 'Mode: Add Bus Stops';
+    btn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+    btn.classList.add('bg-red-500', 'hover:bg-red-600');
+    canvas.style.cursor = 'pointer';
+  } else {
+    btn.textContent = 'Mode: Draw Lines';
+    btn.classList.remove('bg-red-500', 'hover:-red-600');
+    btn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+    canvas.style.cursor = 'crosshair';
+  }
+  draw();
+  console.log(`Map Construction Mode switched to: ${currentMode}`);
+}
+
+function clearMap() {
+  stations = []; lines = []; nodes = []; busStops = []; routes = []; buses = [];
+  activeLine = null;
+  resetRouteCreation();
+  updateRouteList();
+  updateBusList();
+  draw();
+  console.log("Map cleared.");
+}
+
+function resetAndGenerateRandomNetwork() {
+  clearMap(); 
+  const cols = Math.floor(canvas.width / gridSize) - 4;
+  const rows = Math.floor(canvas.height / gridSize) - 4;
+  const startX = gridSize * 2;
+  const startY = gridSize * 2;
+  const gridNodes = new Map();
+  const allPoints = [];
+  let stationId = 1;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = startX + c * gridSize;
+      const y = startY + r * gridSize;
+      const id = stationId++;
+      const node = { id, x, y };
+      stations.push(node);
+      nodes.push({ id: node.id, x: node.x, y: node.y, isJoint: false });
+      allPoints.push(node);
+      gridNodes.set(id, node);
+    }
+  }
+
+  const edges = [];
+  for (const n1 of allPoints) {
+    const neighborR = allPoints.find(n => n.x === n1.x + gridSize && n.y === n1.y);
+    const neighborD = allPoints.find(n => n.x === n1.x && n.y === n1.y + gridSize);
+    if (neighborR) edges.push([n1.id, neighborR.id]);
+    if (neighborD) edges.push([n1.id, neighborD.id]);
+  }
+  edges.sort(() => Math.random() - 0.5);
+  const disjointSets = new Map(allPoints.map(s => [s.id, s.id]));
+  function findSet(id) {
+    if (disjointSets.get(id) === id) return id;
+    const root = findSet(disjointSets.get(id));
+    disjointSets.set(id, root);
+    return root;
+  }
+  function unionSets(id1, id2) {
+    const root1 = findSet(id1);
+    const root2 = findSet(id2);
+    if (root1 !== root2) {
+      disjointSets.set(root2, root1);
+      return true;
+    }
+    return false;
+  }
+
+  const networkEdges = [];
+  let edgesCount = 0;
+  for (const [id1, id2] of edges) {
+    if (unionSets(id1, id2)) {
+      networkEdges.push([id1, id2]);
+      edgesCount++;
+      if (edgesCount >= allPoints.length - 1) break;
+    }
+  }
+  const remainingEdges = edges.filter(e => !networkEdges.some(ne => ne[0] === e[0] && ne[1] === e[1]));
+  for(let i = 0; i < 5 && i < remainingEdges.length; i++) { networkEdges.push(remainingEdges[i]); }
+  const roadLines = [];
+  let currentLineColor = randomColor();
+  for (const [id1, id2] of networkEdges) {
+    roadLines.push({ id: Date.now() + Math.random(), color: currentLineColor, nodeIds: [id1, id2] });
+  }
+  lines = roadLines; 
+  draw();
+  activeLine = null;
+}
+
+// --- Bus Stop Logic (Simplified) ---
+function findLineSegmentAt(x,y) {
+  for (const line of lines) {
+    const nids = line.nodeIds;
+    for (let i = 0; i < nids.length - 1; i++) {
+      const n0 = nodes.find(n => n.id === nids[i]);
+      const n1 = nodes.find(n => n.id === nids[i+1]);
+      if (!n0 || !n1) continue;
+      const dx = n1.x - n0.x; const dy = n1.y - n0.y;
+      const t = ((x - n0.x)*dx + (y - n0.y)*dy) / (dx*dx + dy*dy);
+      if (t >= -0.2 && t <= 1.2) {
+        const projX = n0.x + Math.max(0, Math.min(1, t))*dx;
+        const projY = n0.y + Math.max(0, Math.min(1, t))*dy;
+        const dist = Math.hypot(projX - x, projY - y);
+        if (dist < roadWidth / 2 + 10) {
+          return { line, i, projX, projY, t };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function addBusStopToSegment(seg, clickX, clickY) {
+    const busStopOffset = roadWidth / 2 + 6;
+    const n0 = nodes.find(n => n.id === seg.line.nodeIds[seg.i]);
+    const n1 = nodes.find(n => n.id === seg.line.nodeIds[seg.i+1]);
+
+    if (!n0 || !n1) return;
+
+    let dx = n1.x - n0.x;
+    let dy = n1.y - n0.y;
+    const len = Math.hypot(dx, dy);
+
+    if (len === 0) return;
+
+    dx /= len;
+    dy /= len;
+
+    const perpX = -dy;
+    const perpY = dx;
+
+    let stopX = seg.projX;
+    let stopY = seg.projY;
+
+    // Use perp vector to shift stop location off the road centerline
+    const sideDotProduct = (clickX - stopX) * perpX + (clickY - stopY) * perpY;
+    let side = sideDotProduct > 0 ? 'SIDE_A' : 'SIDE_B';
+    const multiplier = sideDotProduct > 0 ? 1 : -1;
+
+    let finalX = seg.projX + perpX * busStopOffset * multiplier;
+    let finalY = seg.projY + perpY * busStopOffset * multiplier;
+
+    const existingStop = busStops.find(bs => Math.hypot(bs.x - finalX, bs.y - finalY) < 15);
+
+    if (existingStop) {
+        busStops = busStops.filter(bs => bs.id !== existingStop.id);
+        return;
+    }
+
+    const newBusStop = {
+      id: Date.now(),
+      x: finalX,
+      y: finalY,
+      lineId: seg.line.id,
+      nodeIndex: seg.i,
+      t: seg.t, // fractional position on the segment
+      side: side,
+      routeAssignments: [],
+      passengersWaiting: 0 
+    };
+
+    busStops.push(newBusStop);
+}
+
+
+// --- Drawing Functions ---
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawGrid();
+  drawLines();
+  drawBusStops();
+  drawStations();
+  drawBuses();
+}
+
+function drawGrid() {
+  ctx.strokeStyle="#374151"; ctx.lineWidth = 0.5;
+  for (let x=gridSize;x<canvas.width;x+=gridSize) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+  for (let y=gridSize;y<canvas.height;y+=gridSize) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+}
+
+function drawLines() {
+  for (const line of lines) {
+    const ids = line.nodeIds;
+    const pts = ids.map(id => nodes.find(n => n.id === id)).filter(Boolean);
+    if (pts.length < 2) continue;
+
+    // Draw road body
+    ctx.strokeStyle = "#404040";
+    ctx.lineWidth = roadWidth;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "butt";
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i=1;i<pts.length;i++){ ctx.lineTo(pts[i].x, pts[i].y); }
+    ctx.stroke();
+
+    // Draw the bus route color (center line)
+    ctx.strokeStyle = line.color;
+    ctx.lineWidth = 4;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i=1;i<pts.length;i++){ ctx.lineTo(pts[i].x, pts[i].y); }
+    ctx.stroke();
+  }
+}
+
+function drawStations() {
+  for (const s of stations) {
+    const radius = 6;
+    ctx.fillStyle = "#fff";
+    ctx.strokeStyle = (hoverStation && hoverStation.id===s.id) ? "#ef4444" : "#1f2937";
+    ctx.lineWidth = 3;
+
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, radius, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function drawBusStops() {
+  const tempStops = routeManager.isCreating ? routeManager.tempRoute.stops : [];
+  
+  for (const bs of busStops) {
+    let label = 'B';
+    let labelColor = '#333';
+    let isSelected = false;
+
+    // Check temporary route for labels
+    const routeStop = tempStops.find(s => s.stopId === bs.id);
+
+    if (routeStop) {
+        isSelected = true;
+        const index = tempStops.findIndex(s => s.stopId === bs.id);
+        
+        if (routeStop.type === 'A') { label = 'A'; labelColor = routeManager.tempRoute.color; } 
+        else if (routeStop.type === 'Z') { label = 'Z'; labelColor = routeManager.tempRoute.color; } 
+        else if (routeStop.path === 'OUTBOUND') { label = String(index); labelColor = routeManager.tempRoute.color; }
+        else if (routeStop.path === 'INBOUND') { label = 'I' + (index - tempStops.findIndex(s => s.type === 'Z')); labelColor = routeManager.tempRoute.color; }
+        else if (routeStop.type === 'A-END') { label = 'End'; labelColor = routeManager.tempRoute.color; }
+    }
+
+
+    // 1. Bus Stop Platform (small circle on the ground)
+    ctx.fillStyle = "rgba(10, 10, 10, 0.2)";
+    ctx.beginPath();
+    ctx.arc(bs.x, bs.y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 2. Bus stop pole
+    ctx.fillStyle = "#888";
+    ctx.fillRect(bs.x - 2, bs.y - 10, 4, 10);
+
+    // 3. Bus stop sign (circle)
+    ctx.beginPath();
+    ctx.arc(bs.x, bs.y - 12, 6, 0, Math.PI * 2);
+    ctx.fillStyle = isSelected ? labelColor : "#ffc107";
+    ctx.fill();
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // 4. Label (B or Stop Number/Terminal)
+    ctx.fillStyle = isSelected ? "#fff" : "#333";
+    ctx.font = "bold 9px Inter";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, bs.x, bs.y - 12);
+
+    // REVENUE CHANGE: Display passengers waiting
+    if (bs.passengersWaiting && bs.passengersWaiting > 0) {
+        ctx.fillStyle = "red";
+        ctx.font = "bold 10px Inter";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(bs.passengersWaiting, bs.x, bs.y + 10);
+    }
+
+    // Hover effect
+    if (hoverBusStop && hoverBusStop.id === bs.id) {
+        ctx.strokeStyle = isSelected ? 'white' : '#1f2937';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(bs.x, bs.y, 10, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+  }
+}
+
+function drawBuses() {
+    buses.forEach(bus => {
+        if (!bus.position.x || !bus.position.y) return; // Wait for initial position
+        
+        // Don't draw buses that are IDLE (simulated to be off-map/depot)
+        if (bus.state === 'IDLE' || bus.state === 'REPAIRING') return;
+
+        const length = bus.model.length;
+        const width = 8;
+        const color = bus.model.color;
+        const rot = bus.position.rotation;
+        
+        // MODIFIED: If bus is WAITING_FOR_SCHEDULE or BREAK, it stays at the terminal location
+        let px = bus.position.x;
+        let py = bus.position.y;
+
+        if (bus.state === 'WAITING_FOR_SCHEDULE' || bus.state === 'BREAK') {
+            // Slight offset to show it's "parked" near the terminal
+            const route = routes.find(r => r.id === bus.routeId);
+            if (!route) return;
+            const terminalAStop = busStops.find(bs => bs.id === route.stops[0].stopId);
+            if (!terminalAStop) return;
+            
+            // Parked slightly off the stop for IDLE/WAITING
+            px = terminalAStop.x + 20 + bus.id % 5 * 10; 
+            py = terminalAStop.y;
+        }
+
+
+        ctx.save();
+        ctx.translate(px, py);
+        
+        // Only rotate if IN_SERVICE
+        if (bus.state === 'IN_SERVICE') {
+            ctx.rotate(rot);
+        }
+
+        // Draw Bus Body (Rectangle)
+        // Draw bus with maintenance health bar on top
+        const maintValue = bus.maintenance / 100;
+        const maintColor = maintValue > 0.5 ? '#10b981' : maintValue > 0.2 ? '#f59e0b' : '#ef4444';
+        
+        // Draw bus body
+        ctx.fillStyle = color;
+        ctx.fillRect(-length / 2, -width / 2, length, width);
+        
+        // Draw Maintenance Bar
+        ctx.fillStyle = maintColor;
+        ctx.fillRect(-length / 2, -width / 2 - 3, length * maintValue, 2);
+        
+        // Draw Bus ID
+        ctx.fillStyle = "white";
+        ctx.font = "bold 8px Inter";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(bus.id, 0, 0);
+
+        ctx.restore();
+    });
+}
+</script>
+</body>
+</html>
